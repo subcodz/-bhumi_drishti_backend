@@ -15,10 +15,13 @@ from app.api.dashboard import router as dashboard_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure PostGIS extension and tables exist on startup
-    with engine.begin() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
-    Base.metadata.create_all(bind=engine)
+    # Ensure PostGIS extension and tables exist on startup if database is accessible
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"[Warning] Database connection deferred at startup: {e}")
     yield
 
 

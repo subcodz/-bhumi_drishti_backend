@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from scripts.import_osm import main as import_osm_main
 from scripts.seed_features import seed_features_and_risks
-from scripts.seed_historical_incidents import seed_historical_incidents
+from scripts.clean_and_import_historical_data import process_dataset as import_historical_disasters
 from scripts.sync_weather import sync_imd_weather_and_update_risks
 from scripts.train_model import train_and_save_ml_model
 
@@ -42,9 +42,9 @@ def populate_and_setup_all():
     print("\n[Step 3/5] Seeding Feature Vectors (Terrain, Hydrology, Weather, History, Infrastructure, Traffic, Reports)...")
     seed_features_and_risks()
 
-    # 4. Seed Historical Ground-Truth Disaster Incidents & Sync IMD Weather
-    print("\n[Step 4/5] Seeding Historical Disaster Incidents & Syncing Live IMD Weather...")
-    seed_historical_incidents()
+    # 4. Ingest Verified Ground-Truth Historical Disasters & Sync Live IMD Weather
+    print("\n[Step 4/5] Ingesting 749 Verified Historical Disasters & Syncing Live Weather...")
+    import_historical_disasters()
     sync_imd_weather_and_update_risks()
 
     # 5. Train XGBoost Machine Learning Classifier

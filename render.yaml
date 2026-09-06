@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: bhumi-drishti-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bhumi-drishti-db
+          property: connectionString
+      - key: RUN_POPULATE_ON_STARTUP
+        value: "true"
+      - key: IMD_ENABLE_LIVE_FETCH
+        value: "true"
+
+databases:
+  - name: bhumi-drishti-db
+    plan: free
+    region: oregon
+    databaseName: road_risk
+    user: postgres
+    postgresMajorVersion: 16
