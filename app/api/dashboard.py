@@ -214,7 +214,10 @@ def get_live_alerts_log(
 
 
 @router.get("/weather-telemetry")
-def get_risk_prioritized_weather_telemetry(db: Session = Depends(get_db)):
+def get_risk_prioritized_weather_telemetry(
+    force_refresh: bool = Query(False),
+    db: Session = Depends(get_db)
+):
     """
     Aggregates real-time meteorological observations (Open-Meteo / IMD) and PostGIS
     terrain risk scores for all 7 North Eastern states, ordered strictly by hazard severity index.
@@ -222,7 +225,7 @@ def get_risk_prioritized_weather_telemetry(db: Session = Depends(get_db)):
     """
     from app.services.imd_weather import fetch_all_ner_live_weather
 
-    live_weather_map = fetch_all_ner_live_weather()
+    live_weather_map = fetch_all_ner_live_weather(force_refresh=force_refresh)
     telemetry_cards = []
 
     for code, info in NER_STATE_BOUNDS.items():
@@ -286,7 +289,8 @@ def get_risk_prioritized_weather_telemetry(db: Session = Depends(get_db)):
             "wind_direction": st_weather.get("wind_direction", "SW"),
             "weather_condition": condition,
             "wmo_code": st_weather.get("wmo_code", 2),
-            "advisory": advisory
+            "advisory": advisory,
+            "source": st_weather.get("source", "unknown")
         })
 
     # Sort cards strictly by hazard risk score in descending order

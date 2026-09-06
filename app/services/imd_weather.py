@@ -89,14 +89,17 @@ def fetch_all_ner_live_weather(force_refresh: bool = False) -> Dict[str, Dict[st
     )
 
     data = None
+    last_err = None
     try:
         import httpx
         with httpx.Client(timeout=12.0, verify=False) as client:
             res = client.get(url, headers={"User-Agent": "RoadRiskNER-Backend/0.5 (IMD-OpenMeteo Integration)"})
             if res.status_code == 200:
                 data = res.json()
+            else:
+                last_err = f"httpx status {res.status_code}"
     except Exception as e_httpx:
-        pass
+        last_err = f"httpx err: {e_httpx}"
 
     if data is None:
         try:
@@ -109,6 +112,7 @@ def fetch_all_ner_live_weather(force_refresh: bool = False) -> Dict[str, Dict[st
             with urllib.request.urlopen(req, timeout=12, context=ctx) as res:
                 data = json.loads(res.read().decode())
         except Exception as e_urllib:
+            last_err = f"urllib err: {e_urllib}"
             print(f"Live meteorological batch fetch error: {e_urllib}")
 
     if data is not None:
@@ -154,6 +158,7 @@ def fetch_all_ner_live_weather(force_refresh: bool = False) -> Dict[str, Dict[st
                     "weather_condition": condition,
                     "wmo_code": w_code,
                     "advisory": advisory,
+                    "source": "live_open_meteo",
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }
 
@@ -161,12 +166,13 @@ def fetch_all_ner_live_weather(force_refresh: bool = False) -> Dict[str, Dict[st
             _ner_cache_timestamp = now_ts
             return _ner_weather_cache
         except Exception as e_parse:
+            last_err = f"parse err: {e_parse}"
             print(f"Weather parsing error: {e_parse}")
 
-    if _ner_weather_cache:
+    if _ner_weather_cache and not force_refresh:
         return _ner_weather_cache
 
-    # Safe fallback based on current season if internet is completely unreachable
+    # Safe fallback based on current season if internet is temporarily unreachable
     month = datetime.now(timezone.utc).month
     is_monsoon = 5 <= month <= 9
     fallback = {}
@@ -186,10 +192,12 @@ def fetch_all_ner_live_weather(force_refresh: bool = False) -> Dict[str, Dict[st
             "weather_condition": "Monsoon Showers" if is_monsoon else "Mainly Clear",
             "wmo_code": 61 if is_monsoon else 1,
             "advisory": "Advisory: Seasonal weather observation active across regional stations",
+            "source": f"fallback ({last_err})",
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
     _ner_weather_cache = fallback
-    _ner_cache_timestamp = now_ts
+    # Only cache fallback for 10 seconds so next request retries live
+    _ner_cache_timestamp = now_ts - CACHE_TTL_SECONDS + 10
     return _ner_weather_cache
 
 
