@@ -21,5 +21,4 @@ databases:
     plan: free
     region: oregon
     databaseName: road_risk
-    user: postgres
     postgresMajorVersion: 16
