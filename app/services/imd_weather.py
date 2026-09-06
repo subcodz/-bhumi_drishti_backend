@@ -88,11 +88,31 @@ def fetch_all_ner_live_weather(force_refresh: bool = False) -> Dict[str, Dict[st
         f"&hourly=precipitation&past_days=3&forecast_days=1"
     )
 
+    data = None
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "RoadRiskNER-Backend/0.5 (IMD-OpenMeteo Integration)"})
-        with urllib.request.urlopen(req, timeout=8) as res:
-            data = json.loads(res.read().decode())
+        import httpx
+        with httpx.Client(timeout=12.0, verify=False) as client:
+            res = client.get(url, headers={"User-Agent": "RoadRiskNER-Backend/0.5 (IMD-OpenMeteo Integration)"})
+            if res.status_code == 200:
+                data = res.json()
+    except Exception as e_httpx:
+        pass
 
+    if data is None:
+        try:
+            import urllib.request
+            import ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={"User-Agent": "RoadRiskNER-Backend/0.5 (IMD-OpenMeteo Integration)"})
+            with urllib.request.urlopen(req, timeout=12, context=ctx) as res:
+                data = json.loads(res.read().decode())
+        except Exception as e_urllib:
+            print(f"Live meteorological batch fetch error: {e_urllib}")
+
+    if data is not None:
+        try:
             # Open-Meteo returns a list of results when multiple coordinates are passed
             results_list = data if isinstance(data, list) else [data]
 
@@ -140,37 +160,37 @@ def fetch_all_ner_live_weather(force_refresh: bool = False) -> Dict[str, Dict[st
             _ner_weather_cache = new_cache
             _ner_cache_timestamp = now_ts
             return _ner_weather_cache
+        except Exception as e_parse:
+            print(f"Weather parsing error: {e_parse}")
 
-    except Exception as e:
-        print(f"Live meteorological batch fetch error: {e}")
-        if _ner_weather_cache:
-            return _ner_weather_cache
-
-        # Safe fallback based on current season if internet is completely unreachable
-        month = datetime.now(timezone.utc).month
-        is_monsoon = 5 <= month <= 9
-        fallback = {}
-        for code, info in NER_STATE_STATIONS.items():
-            fallback[code] = {
-                "state_code": code,
-                "state_name": info["name"],
-                "station_name": info["station"],
-                "temperature_c": 24.0,
-                "relative_humidity_pct": 88,
-                "rainfall_1h_mm": 1.5 if is_monsoon else 0.0,
-                "rainfall_6h_mm": 8.0 if is_monsoon else 0.0,
-                "rainfall_24h_mm": 22.0 if is_monsoon else 1.0,
-                "rainfall_72h_mm": 45.0 if is_monsoon else 3.0,
-                "wind_speed_kmh": 14.0,
-                "wind_direction": "SW",
-                "weather_condition": "Monsoon Showers" if is_monsoon else "Mainly Clear",
-                "wmo_code": 61 if is_monsoon else 1,
-                "advisory": "Advisory: Seasonal weather observation active across regional stations",
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-        _ner_weather_cache = fallback
-        _ner_cache_timestamp = now_ts
+    if _ner_weather_cache:
         return _ner_weather_cache
+
+    # Safe fallback based on current season if internet is completely unreachable
+    month = datetime.now(timezone.utc).month
+    is_monsoon = 5 <= month <= 9
+    fallback = {}
+    for code, info in NER_STATE_STATIONS.items():
+        fallback[code] = {
+            "state_code": code,
+            "state_name": info["name"],
+            "station_name": info["station"],
+            "temperature_c": 24.0,
+            "relative_humidity_pct": 88,
+            "rainfall_1h_mm": 1.5 if is_monsoon else 0.0,
+            "rainfall_6h_mm": 8.0 if is_monsoon else 0.0,
+            "rainfall_24h_mm": 22.0 if is_monsoon else 1.0,
+            "rainfall_72h_mm": 45.0 if is_monsoon else 3.0,
+            "wind_speed_kmh": 14.0,
+            "wind_direction": "SW",
+            "weather_condition": "Monsoon Showers" if is_monsoon else "Mainly Clear",
+            "wmo_code": 61 if is_monsoon else 1,
+            "advisory": "Advisory: Seasonal weather observation active across regional stations",
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+    _ner_weather_cache = fallback
+    _ner_cache_timestamp = now_ts
+    return _ner_weather_cache
 
 
 def fetch_imd_weather_for_coordinate(lat: float, lon: float) -> Tuple[float, float, float, float]:

@@ -3,6 +3,7 @@ FROM python:3.11-slim
 # Install system GIS dependencies and PostgreSQL development libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     libgdal-dev \
     libgeos-dev \
     libproj-dev \
