@@ -11,6 +11,8 @@ services:
         fromDatabase:
           name: bhumi-drishti-db
           property: connectionString
+      - key: PORT
+        value: "8000"
       - key: RUN_POPULATE_ON_STARTUP
         value: "true"
       - key: IMD_ENABLE_LIVE_FETCH
