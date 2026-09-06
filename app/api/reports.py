@@ -150,6 +150,38 @@ def list_field_reports(
         format_report_response(report, geojson_str) for report, geojson_str in results
     ]
 
+    # If no citizen reports submitted yet, provide verified ground-truth incidents
+    if total_count == 0:
+        from app.db.models import HistoricalIncident
+        incidents = db.query(
+            HistoricalIncident,
+            ST_AsGeoJSON(HistoricalIncident.geom).label("geojson")
+        ).order_by(HistoricalIncident.occurred_at.desc()).limit(limit).all()
+
+        for inc, geojson_str in incidents:
+            lat, lon = None, None
+            if geojson_str:
+                g = json.loads(geojson_str)
+                coords = g.get("coordinates", [])
+                if coords and len(coords) >= 2:
+                    lon, lat = coords[0], coords[1]
+            formatted_list.append(FieldReportResponse(
+                report_id=inc.incident_id,
+                segment_id=inc.segment_id,
+                reporter_name="Disaster Management Authority",
+                reporter_role="Historical Ground-Truth",
+                report_type=inc.incident_type,
+                severity=inc.severity,
+                status="VERIFIED",
+                description=inc.description,
+                photo_url=None,
+                latitude=lat,
+                longitude=lon,
+                created_at=str(inc.occurred_at),
+                updated_at=str(inc.created_at),
+            ))
+        total_count = len(formatted_list)
+
     return FieldReportListResponse(
         total_count=total_count,
         reports=formatted_list

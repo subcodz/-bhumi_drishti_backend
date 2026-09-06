@@ -70,8 +70,10 @@ def get_road_segments(
     query = db.query(
         RoadSegment,
         ST_AsGeoJSON(RoadSegment.geom).label("geojson"),
-        SegmentRisk
-    ).outerjoin(SegmentRisk, RoadSegment.segment_id == SegmentRisk.segment_id)
+        SegmentRisk,
+        SegmentFeature
+    ).outerjoin(SegmentRisk, RoadSegment.segment_id == SegmentRisk.segment_id)\
+     .outerjoin(SegmentFeature, RoadSegment.segment_id == SegmentFeature.segment_id)
 
     if road_type:
         query = query.filter(RoadSegment.road_type == road_type)
@@ -95,14 +97,52 @@ def get_road_segments(
 
     results = query.limit(limit).all()
 
+    # Vectorized batch ML inference: eliminates N+1 queries for high performance
+    model_bundle = get_trained_model()
+    clf = model_bundle.get("model") if model_bundle else None
+
+    vectors = []
+    valid_indices = []
+    for idx, (segment, geojson_str, risk, feat) in enumerate(results):
+        if feat and clf:
+            vectors.append([
+                float(feat.elevation_m),
+                float(feat.slope_deg),
+                float(feat.terrain_roughness),
+                float(feat.distance_to_river_m),
+                float(feat.distance_to_stream_m),
+                1.0 if feat.within_flood_zone else 0.0,
+                float(feat.rainfall_1h_mm),
+                float(feat.rainfall_6h_mm),
+                float(feat.rainfall_24h_mm),
+                float(feat.rainfall_72h_mm),
+                float(feat.flood_events_1y),
+                float(feat.landslide_events_1y),
+                float(feat.blockages_1y),
+                float(feat.road_damage_reports_30d),
+                1.0 if feat.construction_active else 0.0,
+                float(feat.congestion_ratio),
+                float(feat.flood_reports_24h),
+                float(feat.landslide_reports_24h),
+                float(segment.length_m),
+                float(segment.lanes if segment.lanes else 2),
+            ])
+            valid_indices.append(idx)
+
+    ml_probs_dict = {}
+    if vectors and clf:
+        import numpy as np
+        X_batch = np.array(vectors)
+        probs = clf.predict_proba(X_batch)[:, 1]
+        for i, val_idx in enumerate(valid_indices):
+            p = round(float(probs[i]), 4)
+            cat = "CRITICAL" if p >= 0.75 else "HIGH" if p >= 0.55 else "MEDIUM" if p >= 0.30 else "LOW"
+            ml_probs_dict[val_idx] = (p, cat)
+
     features = []
-    for segment, geojson_str, risk in results:
+    for idx, (segment, geojson_str, risk, feat) in enumerate(results):
         geometry = json.loads(geojson_str)
-        
-        # Get ML prediction
-        ml_pred = predict_segment_ml_risk(db, segment.segment_id)
-        ml_prob = ml_pred["ml_blockage_probability"] if ml_pred else None
-        ml_cat = ml_pred["ml_risk_category"] if ml_pred else None
+        ml_prob, ml_cat = ml_probs_dict.get(idx, (None, None))
 
         features.append({
             "type": "Feature",

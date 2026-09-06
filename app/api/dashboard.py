@@ -1,10 +1,11 @@
+import json
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
-from geoalchemy2.functions import ST_MakeEnvelope, ST_Intersects
+from geoalchemy2.functions import ST_MakeEnvelope, ST_Intersects, ST_AsGeoJSON
 
 from app.db.database import get_db
 from app.db.models import RoadSegment, SegmentRisk, SegmentFeature, FieldReport, HistoricalIncident
@@ -142,10 +143,23 @@ def get_live_alerts_log(
     Queries real field reports and historical disaster incidents directly from PostGIS.
     Zero dummy alerts or hardcoded text.
     """
-    reports = db.query(FieldReport).order_by(FieldReport.created_at.desc()).limit(limit).all()
+    reports = db.query(
+        FieldReport,
+        ST_AsGeoJSON(FieldReport.geom).label("geojson")
+    ).order_by(FieldReport.created_at.desc()).limit(limit).all()
 
     alerts_list = []
-    for r in reports:
+    for r, geojson_str in reports:
+        lat, lon = None, None
+        if geojson_str:
+            try:
+                g = json.loads(geojson_str)
+                coords = g.get("coordinates", [])
+                if coords and len(coords) >= 2:
+                    lon, lat = coords[0], coords[1]
+            except Exception:
+                pass
+
         alerts_list.append({
             "id": f"REP-{r.report_id}",
             "timestamp": str(r.created_at),
@@ -155,13 +169,29 @@ def get_live_alerts_log(
             "role": r.reporter_role,
             "description": r.description or f"Field incident reported on segment #{r.segment_id}",
             "status": r.status,
-            "segment_id": r.segment_id
+            "segment_id": r.segment_id,
+            "latitude": lat,
+            "longitude": lon,
         })
 
     # If no field reports submitted yet, fetch recent ground-truth disaster incidents
     if not alerts_list:
-        incidents = db.query(HistoricalIncident).order_by(HistoricalIncident.occurred_at.desc()).limit(limit).all()
-        for inc in incidents:
+        incidents = db.query(
+            HistoricalIncident,
+            ST_AsGeoJSON(HistoricalIncident.geom).label("geojson")
+        ).order_by(HistoricalIncident.occurred_at.desc()).limit(limit).all()
+
+        for inc, geojson_str in incidents:
+            lat, lon = None, None
+            if geojson_str:
+                try:
+                    g = json.loads(geojson_str)
+                    coords = g.get("coordinates", [])
+                    if coords and len(coords) >= 2:
+                        lon, lat = coords[0], coords[1]
+                except Exception:
+                    pass
+
             alerts_list.append({
                 "id": f"INC-{inc.incident_id}",
                 "timestamp": str(inc.occurred_at),
@@ -171,7 +201,9 @@ def get_live_alerts_log(
                 "role": "Disaster Management Authority",
                 "description": inc.description or f"Ground truth disaster event on segment #{inc.segment_id}",
                 "status": "VERIFIED",
-                "segment_id": inc.segment_id
+                "segment_id": inc.segment_id,
+                "latitude": lat,
+                "longitude": lon,
             })
 
     return {
