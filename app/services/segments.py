@@ -6,7 +6,7 @@ from geoalchemy2.functions import ST_AsGeoJSON, ST_MakeEnvelope, ST_Intersects
 
 from app.db.models import RoadSegment, SegmentFeature, SegmentRisk
 from app.services.risk_engine import evaluate_segment_risk
-from app.services.ml_engine import predict_segment_ml_risk
+from app.services.ml_engine import predict_segment_ml_risk, get_trained_model
 
 
 def recalculate_and_save_risk(db: Session, segment: RoadSegment, feat: SegmentFeature, commit: bool = True) -> SegmentRisk:
